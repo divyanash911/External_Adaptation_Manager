@@ -1,7 +1,12 @@
 import socket
+import time
+
+
 SWIM_PORT = 4242
-RT_THRESHOLD = 10
+RT_THRESHOLD = 0.75
 DIMMER_STEP = 0.1
+
+
 def Communication_Instance(msg):
 
 	client_socket = socket.socket(socket.AF_INET , socket.SOCK_STREAM)
@@ -16,45 +21,65 @@ def Communication_Instance(msg):
 
 	return response
 
-def Get_Probes():
+def Get_Total_Utils():
+	count = int(Communication_Instance("get_active_servers"))
+	
+	total = 0
+	print("Active servers : " , count)
+	if count < 1:
+		return
+	
+	for i in range(1,count+1):
+		string = "get_utilization server" + str(i)
+		value = Communication_Instance(string)
+		total = total + float(value)
 
-	print(float(Communication_Instance("get_active_servers")))
-	print(float(Communication_Instance("get_arrival_rate")))
-	print(float(Communication_Instance("get_basic_rt")))
-	print(float(Communication_Instance("get_basic_throughput")))
-	print(float(Communication_Instance("get_dimmer")))
-	print(float(Communication_Instance("get_max_servers")))
-	print(float(Communication_Instance("get_opt_rt")))
-	print(float(Communication_Instance("get_opt_throughput")))
-	print(float(Communication_Instance("get_servers")))
-
+	return total
 
 def balance_load():
 	
 	if float(Communication_Instance("get_active_servers")) < float(Communication_Instance("get_max_servers")):
-		print(Communication_Instance("add_server")))
+		Communication_Instance("add_server")
+		print("Adding server! Total servers currently in system = " , float(Communication_Instance("get_active_servers")))
 	else:
 		value = max(0,float(Communication_Instance("get_dimmer")) - DIMMER_STEP)
-		print(Communication_Instance(f"set_dimmer {value}"))
+		string = "set_dimmer " + str(value)
+		print(Communication_Instance(string))
+		print("Dimmer value set to " , value)
 
 
 def load_checker():
 	
 	while 1:
-		
-		if "error" in Communication_Instance("get_active_servers"):
-				
+		dimmer = float(Communication_Instance("get_dimmer"))
+		if "error" in str(Communication_Instance("get_active_servers"),'UTF-8'):
 			break
-		else:
-			pass
 
+		response_time = float(Communication_Instance("get_basic_rt"))
+		opt_resp_time = float(Communication_Instance("get_opt_rt"))
+		basic_throughput = float(Communication_Instance("get_basic_throughput"))
+		opt_throughput = float(Communication_Instance("get_opt_throughput"))
+
+		response_time = (basic_throughput*response_time + opt_throughput*opt_resp_time)/(basic_throughput + opt_throughput)
 		
-		response_time = float(Communication_Instance("get_basic_rt")
-		
-		if response_time > RT_THRESHOLD :
+		print("####Response time : " , response_time , "####")
+		if response_time > RT_THRESHOLD:
 			balance_load()
 		
 		else :
-			pass
-					
+			spare_util = float(Communication_Instance("get_active_servers")) - Get_Total_Utils()
+			
+			if spare_util > 1:
+				current_dimmer = float(Communication_Instance("get_dimmer"))
+				if current_dimmer < 1 :
+					dimmer = min(1,current_dimmer+DIMMER_STEP)
+					string = "set_dimmer "+str(dimmer)
+					Communication_Instance(string)
+					print("Dimmer value set to " , dimmer)
+				else : 
+					Communication_Instance("remove_server")
+					print("Removing server! Total servers currently in system = " , float(Communication_Instance("get_servers")))
 
+		time.sleep(60)
+
+load_checker()
